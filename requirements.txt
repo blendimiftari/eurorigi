@@ -1,0 +1,20 @@
+# Django and core dependencies
+Django==5.2
+asgiref>=3.8.1
+sqlparse>=0.4.4
+tzdata>=2024.1
+
+# PostgreSQL adapter (using binary version)
+psycopg2-binary>=2.9.9
+
+# Environment variables management
+python-dotenv>=1.0.1
+
+# Pillow for image handling
+Pillow>=10.0.0
+
+# Django REST framework (if needed for APIs)
+djangorestframework>=3.14.0
+
+# Admin interface
+django-jazzmin>=2.6.0 
