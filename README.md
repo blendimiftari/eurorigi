@@ -68,9 +68,11 @@ python manage.py runserver
 
 ## Usage
 
-1. Access the admin interface at `http://localhost:8000/admin/`
-2. Log in with your superuser credentials
-3. Start managing your inventory:
+1. Manually go the start.bat file that's located on the project root folder, right click and press `Send to -> Desktop`
+2. First step creates a shortcut on the Desktop, now you can start the app by double-clicking on the shortcut 
+3. Optional: change icon, select the icon that is located on the media folder inside the project root folder)
+4. Log in with your superuser credentials
+5. Start managing your inventory:
    - Add products and categories
    - Record sales
    - Monitor stock levels
