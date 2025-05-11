@@ -6,7 +6,6 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import Product, Sale, Customer, Category, StockTransaction, SaleItem
 from django.views.decorators.cache import cache_page
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 def get_stock_levels_chart(request):
@@ -203,20 +202,23 @@ def get_sales_by_category_chart(request):
             'borderColor': 'rgba(54, 162, 235, 1)',
             'borderWidth': 1
         }]
-    }) 
+    })
 
 @require_GET
-@csrf_exempt
 def get_product_price(request, product_id):
+    """API endpoint to get a product's selling price"""
+    print(f"API called for product ID: {product_id}")  # Debug log
     try:
-        print(f"Fetching price for product ID: {product_id}")  # Debug print
-        product = Product.objects.get(id=product_id)
-        price = str(product.selling_price)
-        print(f"Found price: {price}")  # Debug print
-        return JsonResponse({'selling_price': price})
+        product = Product.objects.get(pk=product_id)
+        price_value = float(product.selling_price) if product.selling_price else 0
+        print(f"Returning price: {price_value}")  # Debug log
+        return JsonResponse({
+            'success': True,
+            'price': price_value
+        })
     except Product.DoesNotExist:
-        print(f"Product not found with ID: {product_id}")  # Debug print
-        return JsonResponse({'error': 'Product not found'}, status=404)
-    except Exception as e:
-        print(f"Error fetching product price: {str(e)}")  # Debug print
-        return JsonResponse({'error': str(e)}, status=500)
+        print(f"Product not found: {product_id}")  # Debug log
+        return JsonResponse({
+            'success': False,
+            'error': 'Product not found'
+        }, status=404) 
