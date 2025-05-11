@@ -165,6 +165,25 @@ class SaleAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         return ('total_amount', 'profit', 'date')
 
+    def delete_queryset(self, request, queryset):
+        """Override delete_queryset to handle bulk deletions properly"""
+        with transaction.atomic():
+            # First restore stock for all sale items
+            for sale in queryset:
+                items_to_restore = list(sale.items.all())
+                for item in items_to_restore:
+                    print(f"DEBUG: Bulk delete - Restoring {item.quantity} units of {item.product.name}")
+                    actual_change = item.product.update_stock(
+                        item.quantity,
+                        transaction_type='ADJUSTMENT',
+                        notes=f'Restored from bulk sale deletion'
+                    )
+                    if actual_change != item.quantity:
+                        print(f"DEBUG: Warning: Could not fully restore stock for {item.product.name}. Expected +{item.quantity}, actual +{actual_change}")
+            
+            # Then delete all sales
+            queryset.delete()
+
 @admin.register(StockTransaction)
 class StockTransactionAdmin(admin.ModelAdmin):
     list_display = ('product', 'transaction_type', 'quantity', 'is_increase',
@@ -241,4 +260,21 @@ class SaleItemAdmin(admin.ModelAdmin):
     list_filter = ('sale__date',)
     search_fields = ('product__name', 'sale__customer__name')
     readonly_fields = ()
-    ordering = ('-sale__date',) 
+    ordering = ('-sale__date',)
+
+    def delete_queryset(self, request, queryset):
+        """Override delete_queryset to handle bulk deletions properly"""
+        with transaction.atomic():
+            # First restore stock for all items
+            for item in queryset:
+                print(f"DEBUG: Bulk delete - Restoring {item.quantity} units of {item.product.name}")
+                actual_change = item.product.update_stock(
+                    item.quantity,
+                    transaction_type='ADJUSTMENT',
+                    notes=f'Restored from bulk sale item deletion'
+                )
+                if actual_change != item.quantity:
+                    print(f"DEBUG: Warning: Could not fully restore stock for {item.product.name}. Expected +{item.quantity}, actual +{actual_change}")
+            
+            # Then delete all items
+            queryset.delete() 

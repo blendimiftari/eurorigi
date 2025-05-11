@@ -168,6 +168,26 @@ class SaleItem(models.Model):
 
     def clean(self):
         if not self.product:
+            raise ValidationError({
+                'product': 'Product is required.'
+            })
+
+        # Only validate quantity if it's set but invalid (0 or negative)
+        if self.quantity is not None and self.quantity <= 0:
+            raise ValidationError({
+                'quantity': 'Quantity must be greater than 0.'
+            })
+
+        if not self.price_at_sale:
+            if self.product:
+                self.price_at_sale = self.product.selling_price
+            else:
+                raise ValidationError({
+                    'price_at_sale': 'Price at sale is required.'
+                })
+
+        # Skip stock validation if quantity is not set
+        if not self.quantity:
             return
 
         # Get fresh product data and available stock
@@ -267,6 +287,8 @@ class SaleItem(models.Model):
 
     @property
     def profit(self):
+        if not all([self.quantity, self.price_at_sale, self.product, self.product.purchase_price]):
+            return Decimal('0.00')
         return (self.price_at_sale - self.product.purchase_price) * self.quantity
 
     class Meta:
