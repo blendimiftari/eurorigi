@@ -6,6 +6,8 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import Product, Sale, Customer, Category, StockTransaction, SaleItem
 from django.views.decorators.cache import cache_page
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 
 def get_stock_levels_chart(request):
     """Bar chart showing current stock levels vs min stock levels for all products"""
@@ -202,3 +204,19 @@ def get_sales_by_category_chart(request):
             'borderWidth': 1
         }]
     }) 
+
+@require_GET
+@csrf_exempt
+def get_product_price(request, product_id):
+    try:
+        print(f"Fetching price for product ID: {product_id}")  # Debug print
+        product = Product.objects.get(id=product_id)
+        price = str(product.selling_price)
+        print(f"Found price: {price}")  # Debug print
+        return JsonResponse({'selling_price': price})
+    except Product.DoesNotExist:
+        print(f"Product not found with ID: {product_id}")  # Debug print
+        return JsonResponse({'error': 'Product not found'}, status=404)
+    except Exception as e:
+        print(f"Error fetching product price: {str(e)}")  # Debug print
+        return JsonResponse({'error': str(e)}, status=500)

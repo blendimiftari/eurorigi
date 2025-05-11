@@ -132,8 +132,21 @@ class SaleReturnInline(admin.TabularInline):
 class SaleItemInline(admin.TabularInline):
     model = SaleItem
     extra = 1
-    fields = ('product', 'quantity', 'price_at_sale', 'profit')
-    readonly_fields = ('price_at_sale', 'profit')
+    fields = ('product', 'quantity', 'price_at_sale')
+    
+    class Media:
+        js = ['admin/js/selling_price.js']
+        css = {
+            'all': ['admin/css/custom.css']
+        }
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        form = formset.form
+        form.base_fields['price_at_sale'].widget.attrs.update({
+            'class': 'price-at-sale-field'
+        })
+        return formset
 
     def get_readonly_fields(self, request, obj=None):
         if obj:

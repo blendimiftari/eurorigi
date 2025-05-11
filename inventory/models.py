@@ -158,10 +158,17 @@ class Sale(models.Model):
         ordering = ['-date']
 
 class SaleItem(models.Model):
-    sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    sale = models.ForeignKey('Sale', on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey('Product', on_delete=models.CASCADE)
     quantity = models.IntegerField(validators=[MinValueValidator(1)])
-    price_at_sale = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+    price_at_sale = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        null=True,  # Allow null
+        blank=True,  # Allow blank in forms
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text="Leave empty to use product's current selling price"
+    )
 
     def __str__(self):
         return f"{self.product.name} x {self.quantity}"
@@ -170,47 +177,44 @@ class SaleItem(models.Model):
         if not self.product:
             return
 
-        # Get fresh product data and available stock
         available_stock = self.product.get_available_stock()
         
-        # Get the current stock quantity
         if self.pk:
             try:
-                # For existing items, get the original quantity
                 original = SaleItem.objects.get(pk=self.pk)
                 original_quantity = original.quantity
                 stock_change = self.quantity - original_quantity
-                # When editing, we need to consider the original quantity as available
-                available_stock += original_quantity  # Add back the original quantity since it's already "reserved"
+                
+                if stock_change > 0:
+                    if stock_change > available_stock:
+                        raise ValidationError({
+                            'quantity': f'Not enough stock for the increase. Only {available_stock} additional units available.'
+                        })
                 print(f"DEBUG: Editing sale item {self.pk}")
                 print(f"DEBUG: Original quantity: {original_quantity}")
                 print(f"DEBUG: New quantity: {self.quantity}")
-                print(f"DEBUG: Available stock (including original): {available_stock}")
+                print(f"DEBUG: Available stock: {available_stock}")
                 print(f"DEBUG: Stock change needed: {stock_change}")
             except SaleItem.DoesNotExist:
-                # Handle the case where the item doesn't exist anymore
-                stock_change = self.quantity
+                if self.quantity > available_stock:
+                    raise ValidationError({
+                        'quantity': f'Not enough stock. Only {available_stock} units available.'
+                    })
                 print(f"DEBUG: Original sale item not found")
                 print(f"DEBUG: New quantity: {self.quantity}")
                 print(f"DEBUG: Available stock: {available_stock}")
         else:
-            # For new items
-            stock_change = self.quantity
+            if self.quantity > available_stock:
+                raise ValidationError({
+                    'quantity': f'Not enough stock. Only {available_stock} units available.'
+                })
             print(f"DEBUG: New sale item")
             print(f"DEBUG: New quantity: {self.quantity}")
             print(f"DEBUG: Available stock: {available_stock}")
 
-        # Check if there's enough stock
-        if stock_change > available_stock:
-            raise ValidationError({
-                'quantity': f'Not enough stock. Only {available_stock} units available.'
-            })
-
     def save(self, *args, **kwargs):
-        # Run the validation
         self.clean()
 
-        # Store the original state
         if self.pk:
             try:
                 original = SaleItem.objects.get(pk=self.pk)
@@ -225,18 +229,18 @@ class SaleItem(models.Model):
 
         print(f"DEBUG: Save - New quantity: {self.quantity}")
 
-        # Set price_at_sale if not set
-        if not self.price_at_sale and self.product:
+        if not self.product:
+            raise ValidationError('Product is required')
+
+        # Use product's selling price if price_at_sale is not set
+        if not self.price_at_sale:
             self.price_at_sale = self.product.selling_price
 
-        # Save the instance and update stock in a transaction
         with transaction.atomic():
             super().save(*args, **kwargs)
 
-            # Update product stock
             quantity_difference = self.quantity - original_quantity
             if quantity_difference != 0:
-                # Negative quantity_difference means we're reducing stock
                 actual_change = self.product.update_stock(
                     -quantity_difference,
                     transaction_type='SALE',
@@ -245,28 +249,26 @@ class SaleItem(models.Model):
                 if actual_change != -quantity_difference:
                     print(f"DEBUG: Save - Warning: Could not apply full stock change")
 
-            # Update sale total
             self.sale.save()
 
     def delete(self, *args, **kwargs):
-        # Store references before deletion
         product = self.product
         quantity = self.quantity
         sale_id = self.sale_id
         
         print(f"DEBUG: Delete - Restoring {quantity} units to product {product.name}")
         
-        # Delete the sale item and restore stock in a transaction
         with transaction.atomic():
             super().delete(*args, **kwargs)
             
-            # Restore the stock quantity using update_stock
-            actual_change = product.update_stock(quantity)  # Positive quantity to increase stock
+            actual_change = product.update_stock(quantity)
             if actual_change != quantity:
                 print(f"DEBUG: Delete - Warning: Could not fully restore stock. Expected +{quantity}, actual +{actual_change}")
 
     @property
     def profit(self):
+        if not self.price_at_sale or not self.product or not self.product.purchase_price:
+            return Decimal('0.00')
         return (self.price_at_sale - self.product.purchase_price) * self.quantity
 
     class Meta:
