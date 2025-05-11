@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.db.models.deletion import ProtectedError
 from django.db.transaction import atomic
 from django.db import transaction
+import json
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
@@ -133,12 +134,21 @@ class SaleItemInline(admin.TabularInline):
     model = SaleItem
     extra = 1
     fields = ('product', 'quantity', 'price_at_sale', 'profit')
-    readonly_fields = ('price_at_sale', 'profit')
+    readonly_fields = ('profit',)
+
+    class Media:
+        js = ('admin/js/preload_price.js',)
 
     def get_readonly_fields(self, request, obj=None):
-        if obj:
-            return self.readonly_fields
         return ('profit',)
+
+    def formfield_for_foreignkey(self, db_field, request=None, **kwargs):
+        field = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if db_field.name == 'product':
+            field.widget.attrs.update({
+                'class': 'product-selector'
+            })
+        return field
 
 @admin.register(Sale)
 class SaleAdmin(admin.ModelAdmin):
@@ -148,9 +158,11 @@ class SaleAdmin(admin.ModelAdmin):
     inlines = [SaleItemInline]
     readonly_fields = ('total_amount', 'profit', 'date')
     ordering = ('-date',)
+    
+    class Media:
+        js = ('admin/js/sale_form.js',)
 
     def get_readonly_fields(self, request, obj=None):
-        # Always make total_amount, profit, and date read-only
         return ('total_amount', 'profit', 'date')
 
 @admin.register(StockTransaction)
@@ -228,5 +240,5 @@ class SaleItemAdmin(admin.ModelAdmin):
     list_display = ('sale', 'product', 'quantity', 'price_at_sale')
     list_filter = ('sale__date',)
     search_fields = ('product__name', 'sale__customer__name')
-    readonly_fields = ('price_at_sale',)
+    readonly_fields = ()
     ordering = ('-sale__date',) 
