@@ -177,6 +177,10 @@ class SaleItem(models.Model):
         if not self.product:
             return
 
+        # Check if quantity is None before comparisons
+        if self.quantity is None:
+            return  # Let the field validation handle the required error
+
         available_stock = self.product.get_available_stock()
         
         if self.pk:

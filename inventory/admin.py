@@ -134,19 +134,19 @@ class SaleItemInline(admin.TabularInline):
     extra = 1
     fields = ('product', 'quantity', 'price_at_sale')
     
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        form = formset.form
+        form.base_fields['quantity'].widget.attrs.update({
+            'min': '1'
+        })
+        return formset
+
     class Media:
         js = ['admin/js/selling_price.js']
         css = {
             'all': ['admin/css/custom.css']
         }
-
-    def get_formset(self, request, obj=None, **kwargs):
-        formset = super().get_formset(request, obj, **kwargs)
-        form = formset.form
-        form.base_fields['price_at_sale'].widget.attrs.update({
-            'class': 'price-at-sale-field'
-        })
-        return formset
 
     def get_readonly_fields(self, request, obj=None):
         if obj:
@@ -165,6 +165,47 @@ class SaleAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         # Always make total_amount, profit, and date read-only
         return ('total_amount', 'profit', 'date')
+
+    def delete_queryset(self, request, queryset):
+        """Override to handle bulk deletions and restore stock properly"""
+        with transaction.atomic():
+            for sale in queryset:
+                # Store all sale items before deletion to restore stock
+                items_to_restore = list(sale.items.all())
+                
+                # First restore all stock
+                for item in items_to_restore:
+                    print(f"DEBUG: Bulk delete - Restoring {item.quantity} units of {item.product.name}")
+                    actual_change = item.product.update_stock(
+                        item.quantity,
+                        transaction_type='ADJUSTMENT',
+                        notes=f'Restored stock from deleted Sale #{sale.id}'
+                    )
+                    if actual_change != item.quantity:
+                        print(f"DEBUG: Bulk delete - Warning: Could not fully restore stock for {item.product.name}. Expected +{item.quantity}, actual +{actual_change}")
+            
+            # Then delete all selected sales
+            queryset.delete()
+
+    def delete_model(self, request, obj):
+        """Override to ensure single deletions also restore stock properly"""
+        with transaction.atomic():
+            # Store all sale items before deletion to restore stock
+            items_to_restore = list(obj.items.all())
+            
+            # First restore all stock
+            for item in items_to_restore:
+                print(f"DEBUG: Single delete - Restoring {item.quantity} units of {item.product.name}")
+                actual_change = item.product.update_stock(
+                    item.quantity,
+                    transaction_type='ADJUSTMENT',
+                    notes=f'Restored stock from deleted Sale #{obj.id}'
+                )
+                if actual_change != item.quantity:
+                    print(f"DEBUG: Single delete - Warning: Could not fully restore stock for {item.product.name}. Expected +{item.quantity}, actual +{actual_change}")
+            
+            # Then delete the sale
+            obj.delete()
 
 @admin.register(StockTransaction)
 class StockTransactionAdmin(admin.ModelAdmin):
@@ -241,5 +282,55 @@ class SaleItemAdmin(admin.ModelAdmin):
     list_display = ('sale', 'product', 'quantity', 'price_at_sale')
     list_filter = ('sale__date',)
     search_fields = ('product__name', 'sale__customer__name')
-    readonly_fields = ('price_at_sale',)
-    ordering = ('-sale__date',) 
+    ordering = ('-sale__date',)
+
+    def delete_queryset(self, request, queryset):
+        """Override to handle bulk deletions and restore stock properly"""
+        with transaction.atomic():
+            for item in queryset:
+                print(f"DEBUG: Bulk delete - Restoring {item.quantity} units of {item.product.name}")
+                actual_change = item.product.update_stock(
+                    item.quantity,
+                    transaction_type='ADJUSTMENT',
+                    notes=f'Restored stock from deleted Sale Item (Sale #{item.sale.id})'
+                )
+                if actual_change != item.quantity:
+                    print(f"DEBUG: Bulk delete - Warning: Could not fully restore stock for {item.product.name}. Expected +{item.quantity}, actual +{actual_change}")
+            
+            # Then delete all selected items
+            queryset.delete()
+
+    def delete_model(self, request, obj):
+        """Override to ensure single deletions also restore stock properly"""
+        with transaction.atomic():
+            print(f"DEBUG: Single delete - Restoring {obj.quantity} units of {obj.product.name}")
+            actual_change = obj.product.update_stock(
+                obj.quantity,
+                transaction_type='ADJUSTMENT',
+                notes=f'Restored stock from deleted Sale Item (Sale #{obj.sale.id})'
+            )
+            if actual_change != obj.quantity:
+                print(f"DEBUG: Single delete - Warning: Could not fully restore stock for {obj.product.name}. Expected +{obj.quantity}, actual +{actual_change}")
+            
+            # Then delete the item
+            obj.delete()
+
+    def save_model(self, request, obj, form, change):
+        """Override to ensure proper stock handling when saving"""
+        if change:  # If editing existing item
+            try:
+                original = SaleItem.objects.get(pk=obj.pk)
+                quantity_difference = obj.quantity - original.quantity
+                if quantity_difference != 0:
+                    # Negative quantity_difference means we're reducing stock
+                    actual_change = obj.product.update_stock(
+                        -quantity_difference,
+                        transaction_type='SALE',
+                        notes=f'Modified Sale Item in Sale #{obj.sale.id}'
+                    )
+                    if actual_change != -quantity_difference:
+                        print(f"DEBUG: Save - Warning: Could not apply full stock change")
+            except SaleItem.DoesNotExist:
+                pass
+        
+        super().save_model(request, obj, form, change) 
