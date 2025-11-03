@@ -37,7 +37,7 @@ A comprehensive inventory management system built with Django, featuring:
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/eurorigi.git
-cd eurorigi
+cd teIdri
 ```
 
 2. Create a virtual environment and activate it:
