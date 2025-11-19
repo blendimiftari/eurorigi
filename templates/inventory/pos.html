@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Point of Sale - Eurorigi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .product-card { cursor: pointer; transition: transform 0.2s; }
+        .product-card:hover { transform: translateY(-5px); }
+        .cart-item { border-bottom: 1px solid #dee2e6; padding: 10px 0; }
+        .cart-total { font-size: 1.5rem; font-weight: bold; }
+        #barcode-input { font-size: 1.2rem; height: 50px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">Eurorigi POS</span>
+            <a href="/admin/" class="btn btn-outline-light btn-sm">Back to Admin</a>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Left Side: Scanner & Product Info -->
+            <div class="col-md-8">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3"><i class="bi bi-upc-scan"></i> Scan Product</h5>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text"><i class="bi bi-barcode"></i></span>
+                            <input type="text" id="barcode-input" class="form-control" placeholder="Scan barcode here..." autofocus autocomplete="off">
+                            <button class="btn btn-primary" type="button" id="add-btn">Add</button>
+                        </div>
+                        <div id="scan-message" class="text-muted small">Press Enter after scanning</div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm" id="last-scanned-card" style="display: none;">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Last Scanned</h6>
+                        <div class="d-flex align-items-center">
+                            <img id="last-product-img" src="" alt="Product" class="me-3" style="width: 60px; height: 60px; object-fit: cover; display: none;">
+                            <div>
+                                <h4 id="last-product-name" class="mb-0"></h4>
+                                <div class="text-success fw-bold" id="last-product-price"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Cart -->
+            <div class="col-md-4">
+                <div class="card shadow h-100">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-cart"></i> Current Sale</h5>
+                        <span class="badge bg-light text-dark" id="item-count">0 items</span>
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <div id="cart-items" class="flex-grow-1 overflow-auto" style="max-height: 500px;">
+                            <div class="text-center text-muted py-5" id="empty-cart-msg">
+                                <i class="bi bi-cart-x" style="font-size: 3rem;"></i>
+                                <p class="mt-2">Cart is empty</p>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3 pt-3 border-top">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Subtotal:</span>
+                                <span id="subtotal">€0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between cart-total text-primary">
+                                <span>Total:</span>
+                                <span id="total">€0.00</span>
+                            </div>
+                            
+                            <button id="checkout-btn" class="btn btn-success w-100 mt-3 py-2" disabled>
+                                <i class="bi bi-check-circle"></i> Complete Sale
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto" id="toast-title">Notification</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toast-body"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let cart = [];
+        const barcodeInput = document.getElementById('barcode-input');
+        const cartItemsContainer = document.getElementById('cart-items');
+        const emptyCartMsg = document.getElementById('empty-cart-msg');
+        const checkoutBtn = document.getElementById('checkout-btn');
+        const toastEl = document.getElementById('liveToast');
+        const toast = new bootstrap.Toast(toastEl);
+
+        // Focus input on load and keep focus
+        window.onload = () => barcodeInput.focus();
+        document.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+                barcodeInput.focus();
+            }
+        });
+
+        barcodeInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const barcode = this.value.trim();
+                if (barcode) {
+                    scanProduct(barcode);
+                    this.value = '';
+                }
+            }
+        });
+
+        document.getElementById('add-btn').addEventListener('click', () => {
+            const barcode = barcodeInput.value.trim();
+            if (barcode) {
+                scanProduct(barcode);
+                barcodeInput.value = '';
+                barcodeInput.focus();
+            }
+        });
+
+        function scanProduct(barcode) {
+            fetch(`/inventory/api/product/barcode/${barcode}/`)
+                .then(response => {
+                    if (!response.ok) throw new Error('Product not found');
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        addToCart(data.product);
+                        showToast('Success', `Added ${data.product.name}`, 'success');
+                        updateLastScanned(data.product);
+                    }
+                })
+                .catch(error => {
+                    showToast('Error', 'Product not found or invalid barcode', 'danger');
+                    playErrorSound();
+                });
+        }
+
+        function addToCart(product) {
+            const existingItem = cart.find(item => item.id === product.id);
+            if (existingItem) {
+                existingItem.quantity++;
+            } else {
+                cart.push({ ...product, quantity: 1 });
+            }
+            updateCartUI();
+        }
+
+        function removeFromCart(productId) {
+            cart = cart.filter(item => item.id !== productId);
+            updateCartUI();
+        }
+
+        function updateQuantity(productId, change) {
+            const item = cart.find(item => item.id === productId);
+            if (item) {
+                item.quantity += change;
+                if (item.quantity <= 0) {
+                    removeFromCart(productId);
+                } else {
+                    updateCartUI();
+                }
+            }
+        }
+
+        function updateCartUI() {
+            cartItemsContainer.innerHTML = '';
+            
+            if (cart.length === 0) {
+                emptyCartMsg.style.display = 'block';
+                checkoutBtn.disabled = true;
+                document.getElementById('subtotal').textContent = '€0.00';
+                document.getElementById('total').textContent = '€0.00';
+                document.getElementById('item-count').textContent = '0 items';
+                return;
+            }
+
+            emptyCartMsg.style.display = 'none';
+            checkoutBtn.disabled = false;
+
+            let total = 0;
+            let itemCount = 0;
+
+            cart.forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                total += itemTotal;
+                itemCount += item.quantity;
+
+                const el = document.createElement('div');
+                el.className = 'cart-item d-flex justify-content-between align-items-center';
+                el.innerHTML = `
+                    <div>
+                        <div class="fw-bold">${item.name}</div>
+                        <div class="text-muted small">€${item.price.toFixed(2)} x ${item.quantity}</div>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="fw-bold me-3">€${itemTotal.toFixed(2)}</div>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-secondary" onclick="updateQuantity(${item.id}, -1)">-</button>
+                            <button class="btn btn-outline-secondary" onclick="updateQuantity(${item.id}, 1)">+</button>
+                            <button class="btn btn-outline-danger" onclick="removeFromCart(${item.id})"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+                cartItemsContainer.appendChild(el);
+            });
+
+            document.getElementById('subtotal').textContent = `€${total.toFixed(2)}`;
+            document.getElementById('total').textContent = `€${total.toFixed(2)}`;
+            document.getElementById('item-count').textContent = `${itemCount} items`;
+        }
+
+        function updateLastScanned(product) {
+            const card = document.getElementById('last-scanned-card');
+            const img = document.getElementById('last-product-img');
+            const name = document.getElementById('last-product-name');
+            const price = document.getElementById('last-product-price');
+
+            card.style.display = 'block';
+            name.textContent = product.name;
+            price.textContent = `€${product.price.toFixed(2)}`;
+            
+            if (product.image_url) {
+                img.src = product.image_url;
+                img.style.display = 'block';
+            } else {
+                img.style.display = 'none';
+            }
+        }
+
+        checkoutBtn.addEventListener('click', () => {
+            if (cart.length === 0) return;
+
+            checkoutBtn.disabled = true;
+            checkoutBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+
+            const saleData = {
+                items: cart.map(item => ({
+                    product_id: item.id,
+                    quantity: item.quantity
+                }))
+            };
+
+            fetch('/inventory/api/sale/create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(saleData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Success', 'Sale completed successfully!', 'success');
+                    cart = [];
+                    updateCartUI();
+                    document.getElementById('last-scanned-card').style.display = 'none';
+                    playSuccessSound();
+                } else {
+                    showToast('Error', data.error || 'Failed to process sale', 'danger');
+                }
+            })
+            .catch(error => {
+                showToast('Error', 'Network error occurred', 'danger');
+            })
+            .finally(() => {
+                checkoutBtn.disabled = false;
+                checkoutBtn.innerHTML = '<i class="bi bi-check-circle"></i> Complete Sale';
+                barcodeInput.focus();
+            });
+        });
+
+        function showToast(title, message, type) {
+            document.getElementById('toast-title').textContent = title;
+            document.getElementById('toast-body').textContent = message;
+            const toastEl = document.getElementById('liveToast');
+            toastEl.className = `toast align-items-center text-white bg-${type} border-0`;
+            toast.show();
+        }
+
+        function playErrorSound() {
+            // Simple beep logic or placeholder
+        }
+        
+        function playSuccessSound() {
+            // Simple success sound logic
+        }
+    </script>
+</body>
+</html>

@@ -11,4 +11,9 @@ urlpatterns = [
     path('chart/new-customers/', views.get_new_customers_chart, name='chart_new_customers'),
     path('chart/sales-by-category/', views.get_sales_by_category_chart, name='chart_sales_by_category'),
     path('api/product/<int:product_id>/price/', views.get_product_price, name='get_product_price'),
+    
+    # POS URLs
+    path('pos/', views.pos_view, name='pos'),
+    path('api/product/barcode/<str:barcode>/', views.get_product_by_barcode, name='get_product_by_barcode'),
+    path('api/sale/create/', views.create_sale, name='create_sale'),
 ] 

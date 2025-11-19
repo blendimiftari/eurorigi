@@ -1,12 +1,16 @@
 # No views needed - using only the Django admin interface 
 
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.db.models import Count, Sum, F, Q
+from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
 from .models import Product, Sale, Customer, Category, StockTransaction, SaleItem
 from django.views.decorators.cache import cache_page
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import csrf_exempt
+import json
 
 def get_stock_levels_chart(request):
     """Bar chart showing current stock levels vs min stock levels for all products"""
@@ -217,8 +221,79 @@ def get_product_price(request, product_id):
             'price': price_value
         })
     except Product.DoesNotExist:
-        print(f"Product not found: {product_id}")  # Debug log
         return JsonResponse({
             'success': False,
             'error': 'Product not found'
-        }, status=404) 
+        }, status=404)
+
+def pos_view(request):
+    """Render the Point of Sale interface"""
+    return render(request, 'inventory/pos.html')
+
+@require_GET
+def get_product_by_barcode(request, barcode):
+    """API endpoint to get product details by barcode"""
+    try:
+        product = Product.objects.get(barcode=barcode)
+        return JsonResponse({
+            'success': True,
+            'product': {
+                'id': product.id,
+                'name': product.name,
+                'price': float(product.selling_price),
+                'stock': product.stock_quantity,
+                'image_url': product.image.url if product.image else None
+            }
+        })
+    except Product.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Product not found'
+        }, status=404)
+
+@csrf_exempt
+@require_POST
+def create_sale(request):
+    """API endpoint to create a sale from POS data"""
+    try:
+        data = json.loads(request.body)
+        items = data.get('items', [])
+        
+        if not items:
+            return JsonResponse({'success': False, 'error': 'No items in sale'}, status=400)
+
+        with transaction.atomic():
+            # Create the sale
+            sale = Sale.objects.create(
+                total_amount=0,  # Will be calculated by save()
+                profit=0,        # Will be calculated by save()
+                is_paid=True     # POS sales are typically paid immediately
+            )
+
+            for item in items:
+                product_id = item.get('product_id')
+                quantity = item.get('quantity', 1)
+                
+                product = Product.objects.get(id=product_id)
+                
+                SaleItem.objects.create(
+                    sale=sale,
+                    product=product,
+                    quantity=quantity,
+                    price_at_sale=product.selling_price
+                )
+            
+            # Trigger save to calculate totals
+            sale.save()
+
+        return JsonResponse({
+            'success': True, 
+            'sale_id': sale.id,
+            'total_amount': float(sale.total_amount)
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'error': str(e)
+        }, status=500) 

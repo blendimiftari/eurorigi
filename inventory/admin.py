@@ -47,12 +47,12 @@ class ProductPriceHistoryInline(admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = (
-        'name', 'category', 'image_preview', 'stock_status',
+        'name', 'category', 'barcode', 'image_preview', 'stock_status',
         'stock_quantity', 'min_stock_level', 'purchase_price',
         'selling_price', 'profit_margin', 'is_active'
     )
     list_filter = ('category', 'is_active', 'low_stock_alert')
-    search_fields = ('name', 'category__name')
+    search_fields = ('name', 'category__name', 'barcode')
     ordering = ('name',)
     readonly_fields = ('profit_margin', 'image_preview', 'created_at', 'updated_at')
     list_editable = ('is_active', 'min_stock_level', 'purchase_price', 'selling_price')
@@ -66,7 +66,7 @@ class ProductAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'category', 'image', 'image_preview', 'is_active')
+            'fields': ('name', 'category', 'barcode', 'image', 'image_preview', 'is_active')
         }),
         ('Stock Management', {
             'fields': (

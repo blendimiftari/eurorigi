@@ -33,6 +33,7 @@ class Product(models.Model):
     is_active = models.BooleanField(default=True)
     low_stock_alert = models.BooleanField(default=True)
     image = models.ImageField(upload_to='products/', null=True, blank=True)
+    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
